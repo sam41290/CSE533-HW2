@@ -26,6 +26,9 @@
 #include<sys/types.h>
 #include<sys/stat.h>
 #include<sys/fcntl.h>
+#include<math.h>
+#include<features.h>
+#include<pthread.h>
 #include"mytypes.h"
 #include"unprtt.h"
 #define ANSI_COLOR_YELLOW  "\x1b[33m"
@@ -37,6 +40,46 @@
 
 static struct rtt_info rttinfo;
 static int rttinit = 0;
+FILE *fp;
+char srv_ip[50];
+int srv_port;
+int seed;
+float prob;
+int bufsize;
+int delay;
+struct message *buffer;
+
+int bufstart=0,bufend=0;
+char *cmd;
+char *redirection;
+
+void *readbuf()
+{
+
+        while(1)
+        {
+		int ctr=0;
+		while(ctr < bufsize)
+		{
+                	if(bufend==bufstart)
+                        	continue;
+                	if(bufstart!=bufend)
+			{
+				if(fp)
+					fprintf(fp,"%s",buffer[bufstart].msg);
+				else 
+					printf("%s",buffer[bufstart].msg);
+				bufstart=(bufstart + 1) % bufsize;
+				ctr++;
+			}	
+			
+		}
+		sleep(1-((delay) * log(random())/1000));
+        }
+}
+
+
+
 
 
 static void connect_alarm(int signo)
@@ -47,6 +90,32 @@ static void connect_alarm(int signo)
 
 int main(int argc,char *args[])
 {
+
+FILE *cli=fopen("./asgn2/client.in","r");
+if(cli==NULL)
+	printf("can not open client.in file");
+fscanf(cli,"%s",srv_ip);
+fscanf(cli,"%d",&srv_port);
+fscanf(cli,"%d",&seed);
+fscanf(cli,"%f",&prob);
+fscanf(cli,"%d",&bufsize);
+fscanf(cli,"%d",&delay);
+
+fclose(cli);
+
+cmd=(char *)malloc(sizeof(char) * 1000);
+redirection=(char *)malloc(sizeof(char) * 1000);
+buffer=malloc(sizeof(struct message)*bufsize);
+
+srand(seed);
+printf("bufsize %d\n", bufsize);
+printf("delay %d\n", delay);
+srand(seed);
+//printf("random %d\n", rand());
+//printf("%f", 1-((delay) * log(random())/1000));
+
+pthread_t pid;
+pthread_create(&pid,NULL,&readbuf,NULL);
 
 int clientfd=socket(AF_INET,SOCK_DGRAM,0);
 if (clientfd < 0)
@@ -88,8 +157,6 @@ while(1)
 	}
 	printf("\nenter command: ");
 	char ch;
-	char *cmd=(char *)malloc(sizeof(char) * 1000);
-	char *redirection=(char *)malloc(sizeof(char) * 1000);
 	ch=fgetc(stdin);
 	int i=0;
 	int red=0;
@@ -293,7 +360,6 @@ while(1)
         ack.last=1;
         sprintf(ack.msg,"NULL");
 	ack.ts=rtt_ts(&rttinfo);
-	FILE *fp;
 	if(red==1)
         	fp=fopen(redirection,"w");
         else
@@ -332,13 +398,10 @@ while(1)
 			{
 				if(strcmp(cmd,"list")==0)
 					printf(ANSI_COLOR_YELLOW "%d. %s\n" ANSI_COLOR_RESET,index,reply.msg);
-				else if(red==0)
+				else 
 				{
-					printf("%s",reply.msg);
-				}
-				else if(red > 0)
-				{
-					fprintf(fp,"%s",reply.msg);	
+					buffer[bufend]=reply;
+					bufend=(bufend + 1)%bufsize;
 				}
 				index++;
                                 ack.sno=index - 1;
