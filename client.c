@@ -105,7 +105,7 @@ fclose(cli);
 
 cmd=(char *)malloc(sizeof(char) * 1000);
 redirection=(char *)malloc(sizeof(char) * 1000);
-buffer=malloc(sizeof(struct message)*bufsize);
+buffer=malloc(sizeof(struct message)*(bufsize+1));
 
 srand(seed);
 printf("bufsize %d\n", bufsize);
@@ -397,13 +397,19 @@ while(1)
 			else if(reply.sno==index)
 			{
 				if(strcmp(cmd,"list")==0)
+				{
 					printf(ANSI_COLOR_YELLOW "%d. %s\n" ANSI_COLOR_RESET,index,reply.msg);
+					index++;
+				}
 				else 
 				{
-					buffer[bufend]=reply;
-					bufend=(bufend + 1)%bufsize;
+					if(((bufend + 1)%bufsize)!=bufstart)
+					{
+						buffer[bufend]=reply;
+						bufend=(bufend + 1)%bufsize;
+						index++;
+					}
 				}
-				index++;
                                 ack.sno=index - 1;
                                 sprintf(ack.info_type,"DATA");
                                 sprintf(ack.type,"ACK");

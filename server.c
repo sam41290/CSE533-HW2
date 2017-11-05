@@ -35,7 +35,9 @@
 
 static struct rtt_info rttinfo;
 static int rttinit = 0;
-
+int srv_port;
+int bufsize;
+char *dir;
 
 static void connect_alarm(int signo)
 {
@@ -375,8 +377,17 @@ void sendfile(int childlistenfd,struct sockaddr_in filecliaddr,socklen_t fileadd
 
 int main(int argc,char *args[])
 {
+	FILE *srv=fopen("./asgn2/server.in","r");
+	if(srv==NULL)
+        	printf("can not open client.in file");
+	dir=malloc(sixeof(char)*100);
+	fscanf(srv,"%d",&srv_port);
+	fscanf(cli,"%d",&bufsize);
+	fscanf(srv,"%s",dir);
 
-	chdir("./DIR");	
+fclose(cli);
+
+	chdir(dir);	
 	int filelistenfd=socket(AF_INET,SOCK_DGRAM,0);
 
 	if (filelistenfd < 0 )
