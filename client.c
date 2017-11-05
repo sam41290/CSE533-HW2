@@ -47,6 +47,7 @@ int seed;
 float prob;
 int bufsize;
 int delay;
+int freebufspace;
 struct message *buffer;
 
 int bufstart=0,bufend=0;
@@ -106,7 +107,7 @@ fclose(cli);
 cmd=(char *)malloc(sizeof(char) * 1000);
 redirection=(char *)malloc(sizeof(char) * 1000);
 buffer=malloc(sizeof(struct message)*(bufsize+1));
-
+freebufspace = bufsize;
 srand(seed);
 printf("bufsize %d\n", bufsize);
 printf("delay %d\n", delay);
@@ -155,6 +156,9 @@ while(1)
         	printf("file client::%s:: Connection filed out",args[2]);
         	return 0;
 	}
+	freebufspace=abs(((bufsize + 1)-bufend)-((bufsize + 1)-bufstart) - 1);
+	if(freebufspace<=0)
+		continue;
 	printf("\nenter command: ");
 	char ch;
 	ch=fgetc(stdin);
@@ -289,6 +293,7 @@ while(1)
         msg.last=1;
         sprintf(msg.msg,"START");
 	msg.ts = rtt_ts(&rttinfo);
+	msg.bufspace=freebufspace;
         n=write(clientfd,(void*)&msg,sizeof(struct message));
 	printf("write status: %d\n",n);
 	signal(SIGALRM, connect_alarm);
@@ -408,6 +413,7 @@ while(1)
 						buffer[bufend]=reply;
 						bufend=(bufend + 1)%bufsize;
 						index++;
+						
 					}
 				}
                                 ack.sno=index - 1;
@@ -416,6 +422,8 @@ while(1)
                                 ack.last=1;
 				ack.ts=reply.ts;
                                 sprintf(ack.msg,"%s",reply.msg);
+				freebufspace=abs(((bufsize + 1)-bufend)-((bufsize + 1)-bufstart) -1);
+				ack.bufspace=freebufspace;
                                 n=write(clientfd,(void*)&ack,sizeof(ack));
                                 if(n > 0)
                                 {

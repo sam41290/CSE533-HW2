@@ -9,6 +9,7 @@ char type[5];
 char info_type[10];
 int last;
 uint16_t server_port;
+int bufspace;
 };
 
 

@@ -76,8 +76,7 @@ void sendlist(int childlistenfd,struct sockaddr_in filecliaddr,socklen_t fileadd
                         {
                                 if (rtt_timeout(&rttinfo) < 0)
                                 {
-                                        printf("\nfile client:::: no response from server, giving up\n")
-;
+                                        printf("\nfile client:::: no response from server, giving up\n");
                                         rttinit = 0; /* reinit in case we're called again */
                                         errno = ETIMEDOUT;
                                         return;
@@ -106,8 +105,7 @@ void sendlist(int childlistenfd,struct sockaddr_in filecliaddr,socklen_t fileadd
                                 reply.last=0;
 				reply.ts=request.ts;
                                 sprintf(reply.msg,"%s",request.msg);
-				sendto(childlistenfd, (void *)&reply, sizeof(struct message), 0, (struct
- sockaddr *)&filecliaddr, fileaddrlen);
+				sendto(childlistenfd, (void *)&reply, sizeof(struct message), 0, (struct sockaddr *)&filecliaddr, fileaddrlen);
                                 break;
                         }
                  }
@@ -170,8 +168,7 @@ void sendlist(int childlistenfd,struct sockaddr_in filecliaddr,socklen_t fileadd
                         {
                                 if (rtt_timeout(&rttinfo) < 0)
                                 {
-                                        printf("\nfile client:::: no response from server, giving up\n")
-;
+                                        printf("\nfile client:::: no response from server, giving up\n");
                                         rttinit = 0; /* reinit in case we're called again */
                                         errno = ETIMEDOUT;
                                         return;
@@ -242,7 +239,6 @@ void sendfile(int childlistenfd,struct sockaddr_in filecliaddr,socklen_t fileadd
 
         while(1)
         {
-		printf("in child\n");
 		FD_ZERO(&rset);
         	FD_SET(childlistenfd, &rset);
         	maxfdp1 = childlistenfd + 1;
@@ -277,21 +273,27 @@ void sendfile(int childlistenfd,struct sockaddr_in filecliaddr,socklen_t fileadd
                         else if(strcmp(request.info_type,"CMD")==0 && strcmp(request.msg,"START")==0 && strcmp(request.type,"RQST")==0)
                         {
 				printf("start command received\n");
-				reply.sno=1;
-                                sprintf(reply.info_type,"CMD");
-                                sprintf(reply.type,"ACK");
-                                reply.last=0;
-				reply.ts=request.ts;
-                                sprintf(reply.msg,"%s",request.msg);
-				sendto(childlistenfd, (void *)&reply, sizeof(struct message), 0, (struct sockaddr *)&filecliaddr, fileaddrlen);
                                 break;
                         }
                  }
          }
 
 	 alarm(0);
+
+	 SEND_ACK:
+	 reply.sno=1;
+         sprintf(reply.info_type,"CMD");
+         sprintf(reply.type,"ACK");
+         reply.last=0;
+         reply.ts=request.ts;
+         sprintf(reply.msg,"%s",request.msg);
+         sendto(childlistenfd, (void *)&reply, sizeof(struct message), 0, (struct sockaddr *)&filecliaddr, fileaddrlen);
+
+	 int clientbuf=request.bufspace;
          struct message data;
-	 struct message bkp[1024];
+	 struct message *bkp;
+	 bkp=malloc(sizeof(struct message)*(bufsize+1));
+	 int bufstart=0,bufend=0;
          FILE  *fp;
 	 printf("file: %s\n",file);
          fp = fopen(file,"r");
@@ -301,8 +303,53 @@ void sendfile(int childlistenfd,struct sockaddr_in filecliaddr,socklen_t fileadd
 		int ack=0;
 		char *buf=malloc(sizeof(char)*100);
 		buf=fgets(buf,100,fp);
-                while (buf!=NULL)
+                while (buf!=NULL || bufend!=bufstart)
                 {
+			printf("bufstart %d bufend %d\n",bufstart,bufend);
+			if(((bufend + 1)%(bufsize+1))==bufstart || buf==NULL || clientbuf <=0 )
+			{
+				rtt_newpack(&rttinfo);
+                		alarm(rtt_start(&rttinfo));
+                		while (bufend != bufstart)
+                		{
+					//printf("stuck in here\n");
+                        		int n=recvfrom(childlistenfd,(void *)&request, sizeof(struct message),0, (struct sockaddr *)&filecliaddr, &fileaddrlen);
+                        		if(errno == EINTR)
+                        		{
+                                		if (rtt_timeout(&rttinfo) < 0)
+                                		{
+                                        		printf("\nfile client:::: no response from server, giving up\n");
+                                        		rttinit = 0; /* reinit in case we're called again */
+                                        		errno = ETIMEDOUT;
+                                        		return;
+                                		}
+                                		printf("resending\n");
+                                		alarm(0);
+                                		int i=ack + 1;
+                                		while (i < index)
+                                		{
+                                        		sendto(childlistenfd, (void *)&bkp[i], sizeof(struct message), 0, (struct sockaddr *)&filecliaddr, fileaddrlen);
+                                        		i++;
+                                		}
+                                		alarm(rtt_start(&rttinfo));
+                                		continue;
+                        		}
+                        		if(n > 0 && strcmp(request.type,"ACK")==0)
+                        		{
+                                		alarm(rtt_start(&rttinfo));
+                                		ack=request.sno;
+                                		printf("\nACK %d received\n",ack);
+						clientbuf=request.bufspace;
+						while(bkp[bufstart].sno<=request.sno && bufstart != bufend)
+                                                	bufstart=(bufstart + 1)%(bufsize+1);
+                        		}//else printf("\n%d",errno);
+					else if(n>0 && strcmp(request.info_type,"CMD")==0 && strcmp(request.msg,"START")==0 && strcmp(request.type,"RQST")==0)
+						goto SEND_ACK;
+                		}
+				
+			}
+			if(buf==NULL)
+				break;
 			fd_set rset;
         		fd_set wset;
         		FD_ZERO(&rset);
@@ -314,64 +361,48 @@ void sendfile(int childlistenfd,struct sockaddr_in filecliaddr,socklen_t fileadd
                 	select(maxfdp1, &rset,&wset,NULL,NULL);
                 	if (FD_ISSET(childlistenfd,&rset))
                 	{
-				int n=recvfrom(childlistenfd,(void *)&request, sizeof(struct message),0, (struct sockaddr *)&filecliaddr, &fileaddrlen);
-                        	if(n > 0 && strcmp(request.type,"ACK")==0)
+				while(recvfrom(childlistenfd,(void *)&request, sizeof(struct message),MSG_DONTWAIT, (struct sockaddr *)&filecliaddr, &fileaddrlen) > 0)
+				{
+				printf("%s\n",request.msg);
+                        	if(strcmp(request.type,"ACK")==0)
                         	{
-                                	ack=request.sno;
+					ack=request.sno;
                                 	printf("\nACK %d received\n",ack);
-                        	}else printf("\n%d",errno);
+					clientbuf=request.bufspace;
+					while(bkp[bufstart].sno<=request.sno && bufstart != bufend)
+						bufstart=(bufstart + 1)%(bufsize+1);
+					
+                        	}
+				else if(strcmp(request.info_type,"CMD")==0 && strcmp(request.msg,"START")==0 && strcmp(request.type,"RQST")==0)
+                                        goto SEND_ACK;
+				//else printf("\n%d",errno);
+				}
 			}
 			if (FD_ISSET(childlistenfd,&wset))
                         {
-                		sprintf(data.msg,"%s", buf);
-                        	sprintf(data.info_type,"DATA");
-                        	sprintf(data.type,"MSG");
-                        	data.sno=index;
-                        	buf=fgets(buf,100,fp);
-                        	if (buf == NULL)
-                                  	data.last=1;
-                        	else data.last=0;
-				bkp[index - 1]=data;
-				index++;
-				data.ts=rtt_ts(&rttinfo);
-                        	sendto(childlistenfd, (void *)&data, sizeof(struct message), 0, (struct sockaddr *)&filecliaddr, fileaddrlen);
-			}
-                }
-		rtt_newpack(&rttinfo);
-        	alarm(rtt_start(&rttinfo));
-		while (ack < (index - 1))
-		{
-			int n=recvfrom(childlistenfd,(void *)&request, sizeof(struct message),0, (struct sockaddr *)&filecliaddr, &fileaddrlen);
-			if(errno == EINTR)
-                        {
-                                if (rtt_timeout(&rttinfo) < 0)
-                                {
-                                        printf("\nfile client:::: no response from server, giving up\n");
-                                        rttinit = 0; /* reinit in case we're called again */
-                                        errno = ETIMEDOUT;
-                                        return;
-                                }
-                                printf("resending\n");
-				alarm(0);
-				int i=ack + 1;
-				while (i < index)
+				if(((bufend + 1)%(bufsize+1))!=bufstart)
 				{
-					sendto(childlistenfd, (void *)&bkp[i], sizeof(struct message), 0, (struct sockaddr *)&filecliaddr, fileaddrlen);
-					i++;
+                			sprintf(data.msg,"%s", buf);
+                        		sprintf(data.info_type,"DATA");
+                        		sprintf(data.type,"MSG");
+                        		data.sno=index;
+                        		buf=fgets(buf,100,fp);
+                        		if (buf == NULL)
+                                  		data.last=1;
+                        		else data.last=0;
+					data.ts=rtt_ts(&rttinfo);
+					bkp[bufend]=data;
+					bufend=(bufend + 1)%(bufsize + 1);
+					index++;
+					if(clientbuf > 0)
+                        			sendto(childlistenfd, (void *)&data, sizeof(struct message), 0, (struct sockaddr *)&filecliaddr, fileaddrlen);
 				}
-                                alarm(rtt_start(&rttinfo));
-                                continue;
-                        }
-                        if(n > 0 && strcmp(request.type,"ACK")==0)
-                        {
-				alarm(rtt_start(&rttinfo));
-                                ack=request.sno;
-				printf("\nACK %d received\n",ack);
-                        }//else printf("\n%d",errno);
-		}
-		printf("listing complete\n");
-                fclose(fp);
+			}
+			
+                }
          }
+	 printf("file sent\n");
+         fclose(fp);
 
 }
 
@@ -380,12 +411,12 @@ int main(int argc,char *args[])
 	FILE *srv=fopen("./asgn2/server.in","r");
 	if(srv==NULL)
         	printf("can not open client.in file");
-	dir=malloc(sixeof(char)*100);
+	dir=malloc(sizeof(char)*100);
 	fscanf(srv,"%d",&srv_port);
-	fscanf(cli,"%d",&bufsize);
+	fscanf(srv,"%d",&bufsize);
 	fscanf(srv,"%s",dir);
 
-fclose(cli);
+fclose(srv);
 
 	chdir(dir);	
 	int filelistenfd=socket(AF_INET,SOCK_DGRAM,0);
@@ -458,6 +489,7 @@ fclose(cli);
 					sendlist(childlistenfd,filecliaddr,fileaddrlen);
 				else
 					sendfile(childlistenfd,filecliaddr,fileaddrlen,request.msg);
+				printf("child exit\n");
 				exit(0);
 			}
 			else
