@@ -29,7 +29,6 @@
 #include<sys/types.h>
 #include"mytypes.h"
 #include"unprtt.h"
-#define FILE_PORT 8080
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
 
@@ -304,7 +303,7 @@ fclose(srv);
 	memset(&filecliaddr,0,sizeof(filecliaddr));
 
 	filesrvaddr.sin_family=AF_INET;
-	filesrvaddr.sin_port=htons(FILE_PORT);
+	filesrvaddr.sin_port=htons(srv_port);
 	filesrvaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
 

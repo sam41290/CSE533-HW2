@@ -36,7 +36,6 @@
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define ANSI_COLOR_BLUE    "\x1b[34m"
 
-#define SERV_PORT 8080
 
 static struct rtt_info rttinfo;
 static int rttinit = 0;
@@ -121,7 +120,7 @@ pthread_create(&pid,NULL,&readbuf,NULL);
 int clientfd=socket(AF_INET,SOCK_DGRAM,0);
 if (clientfd < 0)
 {
-	printf("file client::%s:: socket() failed",args[2]);
+	printf("file client:::: socket() failed");
 	return 0;
 }
 
@@ -129,11 +128,11 @@ struct sockaddr_in cliaddr;
 struct sockaddr_in srvaddr;
 memset(&srvaddr,0,sizeof(srvaddr));
 srvaddr.sin_family=AF_INET;
-srvaddr.sin_port=htons(SERV_PORT);
+srvaddr.sin_port=htons(srv_port);
 
-if(inet_pton(AF_INET, (args[1]), &srvaddr.sin_addr) < 0)
+if(inet_pton(AF_INET, (srv_ip), &srvaddr.sin_addr) < 0)
 {
-	printf("file client::%s:: wrong address format",args[2]);
+	printf("file client:::: wrong address format");
 }
 
 
@@ -143,17 +142,17 @@ while(1)
 	//printf("%d",errno);
 	if (errno==ETIMEDOUT)
 	{
-        	printf("file client::%s:: Connection filed out",args[2]);
+        	printf("file client:::: Connection filed out");
         	return 0;
 	}
 	if (errno==ECONNREFUSED)
 	{
-        	printf("file client::%s:: Connection refused by server",args[2]);
+        	printf("file client:::: Connection refused by server");
         	return 0;
 	}
 	if (errno==EHOSTUNREACH || errno==ENETUNREACH)
 	{
-        	printf("file client::%s:: Connection filed out",args[2]);
+        	printf("file client:::: Connection timed out");
         	return 0;
 	}
 	freebufspace=abs(((bufsize + 1)-bufend)-((bufsize + 1)-bufstart) - 1);
@@ -277,7 +276,7 @@ while(1)
 	childsrvaddr.sin_family=AF_INET;
 	childsrvaddr.sin_port=reply.server_port;
 
-	if(inet_pton(AF_INET, (args[1]), &childsrvaddr.sin_addr) < 0)
+	if(inet_pton(AF_INET, (srv_ip), &childsrvaddr.sin_addr) < 0)
 	{
         	printf("file client::%s:: wrong address format",args[2]);
 	}
