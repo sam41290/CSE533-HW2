@@ -72,7 +72,7 @@ void *readbuf()
 				if(fp)
 					fprintf(fp,"%s",buffer[bufstart].msg);
 				else 
-					printf("%s",buffer[bufstart].msg);
+					printf(ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET,buffer[bufstart].msg);
 				bufstart=(bufstart + 1) % (bufsize + 1);
 				ctr++;
 			}	
@@ -133,19 +133,38 @@ if (clientfd < 0)
 
 struct sockaddr_in cliaddr;
 struct sockaddr_in srvaddr;
+socklen_t cliaddrlen=(sizeof(cliaddr));
 memset(&srvaddr,0,sizeof(srvaddr));
 srvaddr.sin_family=AF_INET;
 srvaddr.sin_port=htons(srv_port);
 
+
+
 if(inet_pton(AF_INET, (srv_ip), &srvaddr.sin_addr) < 0)
 {
-	printf("file client:::: wrong address format");
+	printf("file client:::: wrong IP address format");
 }
 
+int consts=connect(clientfd, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
+
+getsockname(clientfd,(struct sockaddr *)&cliaddr,&cliaddrlen);
+printf("\nClient IP %s port %d\n",inet_ntoa(cliaddr.sin_addr),cliaddr.sin_port);
+
+printf("\nServer IP %s port %d\n",inet_ntoa(srvaddr.sin_addr),srvaddr.sin_port);
+
+printf("\n|------------------------------------------|\n1.type list to get file list\n2.type get <filename> to print file\n3.type get <filename> '>>/>' <filename> to download\n4.type quit to exit client\n|--------------------------------------------|\n");
+
+printf("\n");
 
 while(1)
 {
-	int consts=connect(clientfd, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
+	rtt_init(&rttinfo); /* first time we're called */
+	rttinit = 1;
+	rtt_d_flag = 1;
+		
+		
+	consts=connect(clientfd, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
+	
 	//printf("%d",errno);
 	if (errno==ETIMEDOUT)
 	{
@@ -170,7 +189,11 @@ while(1)
 	pthread_mutex_unlock(&mutex);
 	
 	if(freebufspace==bufsize)
+	{
+		if (fp)
+			fclose(fp);
 		printf("\nenter command: ");
+	}
 	else
 		continue;
 	
@@ -186,7 +209,7 @@ while(1)
 			red++;
 		if(red>=1)
 		{
-			if(ch!='>')
+			if(ch!='>' && ch!=' ')
 			{
 				redirection[j]=ch;
 				j++;
@@ -203,14 +226,18 @@ while(1)
 		i=i-1;
 	cmd[i]='\0';
 	redirection[j]='\0';
-
+	if(strncmp(cmd,"quit",4)==0)
+	{
+		printf("\nClosing client application\n");
+		return(0);
+	}
 	if(strcmp(cmd,"list")!=0 && strncmp(cmd,"get",3)!=0)
 		continue;
-	if (rttinit == 0) {
-		rtt_init(&rttinfo); /* first time we're called */
+	/*if (rttinit == 0) {
+		rtt_init(&rttinfo); 
 		rttinit = 1;
 		rtt_d_flag = 1;
-	}
+	}*/
 
 //------------------send command to the server--------------------------
 
@@ -223,18 +250,18 @@ while(1)
 	if(p < prob)
 	{
 		sprintf(msg.msg,"NULL");
-		printf("\ncommand lost\n");
+		//printf("\ncommand lost\n");
 	}
 	else
 	{
 		sprintf(msg.msg,"%s",cmd);
-		printf("\ncommand sent %s\n",msg.msg);
+		//printf("\ncommand sent %s\n",msg.msg);
 	}
 	msg.ts = rtt_ts(&rttinfo);
 	
 	int n=write(clientfd,(void*)&msg,sizeof(struct message));
-	//if (n > 0)
-	//	printf("command sent\n");
+	if (n > 0)
+		printf("command %s sent with chance of delivery %d \n",cmd,1-(p < prob));
 
 
 //------------wait for ACK and child server port from parent server------------------
@@ -276,6 +303,8 @@ while(1)
                msg.ts = rtt_ts(&rttinfo);
                printf("ACK lost....resending\n");
                n=write(clientfd,(void*)&msg,sizeof(struct message));
+			   if(n>0)
+					printf("command %s re-sent with chance of delivery %d \n",cmd,1-(p < prob));
 			   tv.tv_sec = rtt_start(&rttinfo);
                           //alarm(rtt_start(&rttinfo));
 			continue;
@@ -289,14 +318,14 @@ while(1)
 			//printf("n=%d errno=%d\n",n,errno);
 			p=rand() / (double)RAND_MAX;
 			if(p < prob && n>0)
-				sprintf(reply.type,"NOTACK");
+				sprintf(reply.type,"NULL");
 			if(n<0 && errno==EINTR)
 			{
                 continue;
 			}
         	else if(n<=0)
         	{
-               	printf("file client::%s::Server refused connection",args[2]);
+               	printf("file client::%s::Server refused connection",srv_ip);
                	return 0;
         	}
 			else if(strcmp(reply.info_type,"CMD")==0 && strcmp(reply.msg,msg.msg)==0 && strcmp(reply.type,"ACK")==0)
@@ -323,10 +352,12 @@ while(1)
 	}
 
 	consts=connect(clientfd, (struct sockaddr *)&childsrvaddr, sizeof(childsrvaddr));
-	printf("consts: %d\n",consts);
+	//printf("consts: %d\n",consts);
 	socklen_t childsrvlen=sizeof(childsrvaddr);
-    getsockname(clientfd,(struct sockaddr *)&testsrvaddr,&childsrvlen);
-	printf("child server port %d\n",childsrvaddr.sin_port);
+    //getsockname(clientfd,(struct sockaddr *)&testsrvaddr,&childsrvlen);
+	//printf("child server port %d\n",childsrvaddr.sin_port);
+	
+	printf("Initiating Data transfer...\n");
 	msg.sno=1;
 	p=rand() / (double)RAND_MAX;
     sprintf(msg.info_type,"CMD");
@@ -340,7 +371,9 @@ while(1)
 	msg.ts = rtt_ts(&rttinfo);
 	msg.bufspace=freebufspace;
     n=write(clientfd,(void*)&msg,sizeof(struct message));
-	printf("write status: %d\n",n);
+	if(n>0)
+		printf("START command sent with chance of delivery %d \n",1-(p < prob));
+	//printf("write status: %d\n",n);
 	//signal(SIGALRM, connect_alarm);
 	
     rtt_newpack(&rttinfo);
@@ -351,20 +384,20 @@ while(1)
 
 //-----------------wait for ACK from child server-----------------------------------------
 	tv.tv_sec = rtt_start(&rttinfo);
+	printf("\nwaiting on child server to send ack\n");
 	while(1)
     {   
 		FD_ZERO(&rset);
 		FD_SET(clientfd, &rset);
 		maxfdp1 = clientfd + 1;
-		printf("\nwaiting on child server to send ack\n");
+		
 		n=select(maxfdp1, &rset, NULL, NULL, &tv);
 		//printf("control is here\n");
 		if(n==0)
 		{
         if (rtt_timeout(&rttinfo) < 0)
 			{
-				printf("\nfile client:::: no response from server, giving up\n")
-;       	    
+				printf("\nfile client:::: no response from server, giving up\n");       	    
 				rttinit = 0; /* reinit in case we're called again */
 				errno = ETIMEDOUT;
 				return (-1);
@@ -373,10 +406,12 @@ while(1)
 			if(p < prob)
 				sprintf(msg.msg,"NULL");
 			else
-				sprintf(msg.msg,"%s",cmd);
+				sprintf(msg.msg,"START");
 			msg.ts = rtt_ts(&rttinfo);
 			printf("resending start command\n");
 			n=write(clientfd,(void*)&msg,sizeof(struct message));
+			if(n>0)
+				printf("START command re-sent with chance of delivery %d \n",1-(p < prob));
 			tv.tv_sec = rtt_start(&rttinfo);
 			//alarm(rtt_start(&rttinfo));
 			continue;
@@ -455,6 +490,8 @@ while(1)
             //printf("resending  %d\n",ack.sno);
 			pthread_mutex_unlock(&mutex);
 			p=rand() / (double)RAND_MAX;
+			if((1-(p<prob))==0)
+				printf("\nLast ACK lost or Server data lost...resending ACK\n");
 			if(p < prob)
 				sprintf(ack.type,"NULL");
 			else
@@ -474,6 +511,8 @@ while(1)
 			p=rand() / (double)RAND_MAX;
 			if(p < prob && n>0)
 				msg.sno=-1;
+			else if(n>0)
+				tv.tv_sec = rtt_start(&rttinfo);
             if(n<0 && errno==EINTR)
                 continue;
             else if(n<=0)
@@ -525,7 +564,6 @@ while(1)
                         //printf("\nACK %d sent\n",index -1);
                         ack_index=index - 1;
                 }
-				tv.tv_sec = rtt_start(&rttinfo);
 			}
 		}
 	}
@@ -544,8 +582,7 @@ while(1)
 			ack_index=index - 1;
 		}
 	}
-	if (fp)
-		fclose(fp);
+	
 	//printf(ANSI_COLOR_BLUE "file is: %s\n" ANSI_COLOR_RESET,str2);
 
 }
